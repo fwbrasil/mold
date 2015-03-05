@@ -1,6 +1,6 @@
 Mold  
 ====  
-Compile-time reflection for Scala  
+Macros to mold your types   
 [![Build Status](https://secure.travis-ci.org/fwbrasil/mold.png)](http://travis-ci.org/fwbrasil/mold)
 
 # Versioning #
