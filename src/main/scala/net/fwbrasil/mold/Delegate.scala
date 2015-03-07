@@ -10,9 +10,10 @@ trait Delegate extends Dynamic {
   val delegate: T forSome { type T }
 
   def selectDynamic(selection: String): Any = macro DelegateMacro.delegateSelectDynamic
-  def applyDynamic(selection: String)(args: Any*): Any = macro DelegateMacro.delegateApplyDynamic
+  def applyDynamic(selection: String)(args: Any*): Any = macro DelegateMacro.delegateApplyDynamic1
+//  def applyDynamic[A, B](selection: String)(args1: Any*)(args2: Any*): Any = macro DelegateMacro.delegateApplyDynamic2
   def around[T, P <: Params](selection: String, params: P)(f: P => T) = f(params)
-
+  
   override def toString = delegate.toString
   override def hashCode = delegate.hashCode
   override def equals(other: Any) = delegate.equals(other)

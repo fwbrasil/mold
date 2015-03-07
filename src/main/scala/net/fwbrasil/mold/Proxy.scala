@@ -7,6 +7,9 @@ import scala.reflect.runtime.{ universe => ru }
 import scala.reflect.ClassTag
 
 trait Proxy
+trait Around {
+  def apply[T, P <: Params](selection: String, params: P)(f: P => T): T
+}
 object Proxy {
-  def apply[T](instance: Any): Any = macro ProxyMacro.proxy[T]
+  def apply[T](instance: Any, around: Around): Any = macro ProxyMacro.proxy[T]
 }

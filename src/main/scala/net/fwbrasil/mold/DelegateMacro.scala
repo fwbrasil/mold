@@ -6,10 +6,16 @@ import scala.reflect.macros.whitebox.Context
 object DelegateMacro {
 
   def delegateSelectDynamic(c: Context)(selection: c.Expr[String]) =
-    delegateApplyDynamic(c)(selection)()
+    delegateApplyDynamic1(c)(selection)()
 
-  def delegateApplyDynamic(c: Context)(selection: c.Expr[String])(args: c.Expr[Any]*) = {
+  def delegateApplyDynamic2(c: Context)(selection: c.Expr[String])(args1: c.Expr[Any]*)(args2: c.Expr[Any]*) = {
     import c.universe._
+    q"null"
+  }
+
+  def delegateApplyDynamic1(c: Context)(selection: c.Expr[String])(args: c.Expr[Any]*) = {
+    import c.universe._
+    println(args)
     val proxy = c.prefix.tree
     val method = termName(c)(selection)
     val pack = c.mirror.staticPackage(DelegateMacro.this.getClass.getPackage.getName)

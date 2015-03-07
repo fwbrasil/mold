@@ -9,15 +9,21 @@ import language.experimental.macros
 class ZText extends FreeSpec {
 
   "delegate" in {
+    
+    class Foo {
+      def a(p: Int, q: Int) = p + q
+      def b(a: Int) = 11
+    }
 
-    class Bippy(val delegate: List[Int]) extends Delegate {
+    class Bippy(val delegate: Foo) extends Delegate {
       def hhhj(int: Int) = "a"
     }
 
-    val b = new Bippy(List(1, 2, 3))
+    val b = new Bippy(new Foo)
 
-    println(b.size)
-    println(b.slice(1, 2))
+    // b.a(1)(2) not supported
+    println(b.b(3))
+    println(b.hhhj(2))
   }
 
   "proxy" in {
@@ -40,16 +46,24 @@ class ZText extends FreeSpec {
         type X = Int
       }
       type T = o.X
+      var varr = "1"
       val vall = 11
-      def varr = "v"
-      def varr_=(v: String) = v
       def bazinga(param: Int) = param * 2
       override def boo(a: Int)(b: Int) = a * b
     }
 
     val foo = new FooImpl
 
-    val p = Proxy(foo)
+    val ar = new Around {
+      def apply[T, P <: Params](selection: String, params: P)(f: P => T): T = {
+        println("before", selection)
+        val r = f(params)
+        println("after", selection)
+        r
+      }
+    }
+
+    val p = Proxy(foo, ar)
 
     println(p.a)
     println(p.bazinga(4))

@@ -5,7 +5,7 @@ import scala.reflect.macros.whitebox.Context
 
 object ProxyMacro {
 
-  def proxy[T](c: Context)(instance: c.Expr[Any])(implicit t: c.WeakTypeTag[T]) = {
+  def proxy[T](c: Context)(instance: c.Expr[Any], around: c.Expr[Around])(implicit t: c.WeakTypeTag[T]) = {
     import c.universe._
     val classes = instance.actualType.baseClasses.filter(_.asClass.isTrait)
     val baseTypes =
@@ -13,22 +13,24 @@ object ProxyMacro {
         classes.map(instance.actualType.baseType(_))
       else
         List(t.tpe)
-    createProxy(c)(baseTypes, instance)
+    createProxy(c)(baseTypes, instance, around)
   }
 
-  private def createProxy(c: Context)(types: List[c.Type], instance: c.Expr[Any]) = {
+  private def createProxy(c: Context)(types: List[c.Type], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
     val proxyType = c.mirror.symbolOf[Proxy].toType
     val declarations = types.map(_.decls).flatten
-    q"""
+    val res = q"""
       new ..${types :+ proxyType} {
         ..${proxyTypes(c)(declarations, instance)}
-        ..${proxyMethods(c)(declarations, instance)}
+        ..${proxyMethods(c)(declarations, instance, around)}
       }
     """
+        println(res)
+        res
   }
 
-  private def proxyMethods(c: Context)(m: List[c.Symbol], instance: c.Expr[Any]) = {
+  private def proxyMethods(c: Context)(m: List[c.Symbol], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
     val g = wc.groupBy(s => (s.name, s.paramLists))
