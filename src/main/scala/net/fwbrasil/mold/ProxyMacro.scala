@@ -7,11 +7,11 @@ object ProxyMacro {
 
   def proxy[T](c: Context)(instance: c.Expr[Any], around: c.Expr[Around])(implicit t: c.WeakTypeTag[T]) = {
     import c.universe._
-    val classes = instance.actualType.baseClasses.filter(_.asClass.isTrait)
     val baseTypes =
-      if (t.tpe =:= typeOf[Nothing])
-        classes.map(instance.actualType.baseType(_))
-      else
+      if (t.tpe =:= typeOf[Nothing]) {
+        val remove = List(instance.actualType, typeOf[Any], typeOf[Object])
+        instance.actualType.baseClasses.map(instance.actualType.baseType(_)).filterNot(remove.contains)
+      } else
         List(t.tpe)
     createProxy(c)(baseTypes, instance, around)
   }
@@ -26,24 +26,28 @@ object ProxyMacro {
         ..${proxyMethods(c)(declarations, instance, around)}
       }
     """
-        println(res)
-        res
+    println(res)
+    res
   }
 
   private def proxyMethods(c: Context)(m: List[c.Symbol], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
-    val g = wc.groupBy(s => (s.name, s.paramLists))
+    val g = wc.groupBy(s => (s.name, s.typeParams.map(c.internal.typeDef(_)), s.paramLists.map(_.map(s => methodParam(c)(s, instance)))))
+    val f = g.filter(_._1._1.decoded == "boo")
+    println(f)
+
     g.map {
-      case ((name, List()), symbols) if (symbols.exists(_.isLazy)) =>
+      case ((name, List(), List()), symbols) if (symbols.exists(_.isLazy)) =>
         q"override lazy val $name = $instance.$name"
-      case ((name, List()), symbols) if (symbols.exists(_.isAccessor) && symbols.exists(!_.setter.isMethod)) =>
+      case ((name, List(), List()), symbols) if (symbols.exists(_.isAccessor) && symbols.exists(!_.setter.isMethod)) =>
         q"override val $name = $instance.$name"
-      case ((name, List()), symbols) =>
-        q"override def $name = $instance.$name"
-      case ((name, params), symbols) =>
-        val paramsDecl = params.map(_.map(s => methodParam(c)(s, instance)))
-        q"override def $name(...$paramsDecl) = $instance.$name(...$paramsDecl)"
+      case ((name, List(), params), symbols) if (params.flatten.isEmpty) =>
+        q"override def $name = $around(${name.decoded}, (u: Unit) => $instance.$name)(())"
+      case ((name, typeParams, params), symbols) if (params.flatten.isEmpty) =>
+        q"override def $name[..$typeParams] = $around(${name.decoded}, (u: Unit) => $instance.$name[..${typeParams.map(_.name)}])(())"
+      case ((name, typeParams, params), symbols) =>
+        q"override def $name[..$typeParams](...$params) = $around(${name.decoded}, $instance.$name[..${typeParams.map(_.name)}])(...$params)"
     }
   }
 
@@ -61,7 +65,7 @@ object ProxyMacro {
       case TypeRef(ThisType(tpe), name, List()) =>
         q"${s.name.toTermName}: $instance.$name"
       case t =>
-        q"${s.name.toTermName}: $t"
+        q"${s.name.toTermName}: ${t}"
     }
   }
 }

@@ -8,7 +8,7 @@ import scala.reflect.ClassTag
 
 trait Proxy
 trait Around {
-  def apply[T, P <: Params](selection: String, params: P)(f: P => T): T
+  def apply[T, P](selection: String, f: P => T)(params: P): T
 }
 object Proxy {
   def apply[T](instance: Any, around: Around): Any = macro ProxyMacro.proxy[T]

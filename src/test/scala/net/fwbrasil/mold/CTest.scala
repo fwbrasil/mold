@@ -9,7 +9,7 @@ import language.experimental.macros
 class ZText extends FreeSpec {
 
   "delegate" in {
-    
+
     class Foo {
       def a(p: Int, q: Int) = p + q
       def b(a: Int) = 11
@@ -33,8 +33,8 @@ class ZText extends FreeSpec {
       def a: String
       def b = "b"
       type T
-      var varr: String
-      val vall: Int
+      //      var varr: String
+      //      val vall: Int
     }
 
     trait Bar[T] {
@@ -55,22 +55,22 @@ class ZText extends FreeSpec {
     val foo = new FooImpl
 
     val ar = new Around {
-      def apply[T, P <: Params](selection: String, params: P)(f: P => T): T = {
+      def apply[T, P](selection: String, f: P => T)(params: P): T = {
         println("before", selection)
         val r = f(params)
         println("after", selection)
         r
       }
     }
-
+    
     val p = Proxy(foo, ar)
-
-    println(p.a)
-    println(p.bazinga(4))
-    println(p.boo(1)(2))
-    println(p.isInstanceOf[Foo])
-    println(p.isInstanceOf[Bar[Int]])
-    println(p.isInstanceOf[FooImpl])
+    //
+    //    println(p.b)
+    //    println(p.bazinga(4))
+    //    //    println(p.boo(1)(2))
+    //    println(p.isInstanceOf[Foo])
+    //    println(p.isInstanceOf[Bar[Int]])
+    //    println(p.isInstanceOf[FooImpl])
   }
 
   "stub" in {
