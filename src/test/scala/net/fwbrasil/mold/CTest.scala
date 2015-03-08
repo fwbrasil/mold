@@ -62,8 +62,8 @@ class ZText extends FreeSpec {
         r
       }
     }
-    
-    val p = Proxy(foo, ar)
+
+    //    val p = Proxy(foo, ar)
     //
     //    println(p.b)
     //    println(p.bazinga(4))
@@ -74,6 +74,19 @@ class ZText extends FreeSpec {
   }
 
   "stub" in {
+    trait Foo {
+      def boo(a: Int)(b: Int) = a + b
+      def a: String
+      def b = "b"
+    }
 
+    val impl = new Impl {
+      def apply[T: ClassTag](selection: String)(params: List[List[Any]]): T =
+        "x".asInstanceOf[T]
+    }
+
+    val s = Stub[Foo](impl)
+    
+    println(s.a)
   }
 }

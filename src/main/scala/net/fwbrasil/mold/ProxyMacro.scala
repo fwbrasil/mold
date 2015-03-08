@@ -5,38 +5,27 @@ import scala.reflect.macros.whitebox.Context
 
 object ProxyMacro {
 
-  def proxy[T](c: Context)(instance: c.Expr[Any], around: c.Expr[Around])(implicit t: c.WeakTypeTag[T]) = {
-    import c.universe._
-    val baseTypes =
-      if (t.tpe =:= typeOf[Nothing]) {
-        val remove = List(instance.actualType, typeOf[Any], typeOf[Object])
-        instance.actualType.baseClasses.map(instance.actualType.baseType(_)).filterNot(remove.contains)
-      } else
-        List(t.tpe)
-    createProxy(c)(baseTypes, instance, around)
-  }
+  def proxy[T](c: Context)(instance: c.Expr[Any], around: c.Expr[Around])(implicit t: c.WeakTypeTag[T]) =
+    createProxy(c)(proxyBaseClasses[T](c)(instance), instance, around)
 
   private def createProxy(c: Context)(types: List[c.Type], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
-    val proxyType = c.mirror.symbolOf[Proxy].toType
+    val proxyTrait = c.mirror.symbolOf[Proxy].toType
     val declarations = types.map(_.decls).flatten
     val res = q"""
-      new ..${types :+ proxyType} {
+      new ..${types :+ proxyTrait} {
         ..${proxyTypes(c)(declarations, instance)}
-        ..${proxyMethods(c)(declarations, instance, around)}
+        ..${proxyMembers(c)(declarations, instance, around)}
       }
     """
     println(res)
     res
   }
 
-  private def proxyMethods(c: Context)(m: List[c.Symbol], instance: c.Expr[Any], around: c.Expr[Around]) = {
+  private def proxyMembers(c: Context)(m: List[c.Symbol], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
     val g = wc.groupBy(s => (s.name, s.typeParams.map(c.internal.typeDef(_)), s.paramLists.map(_.map(s => methodParam(c)(s, instance)))))
-    val f = g.filter(_._1._1.decoded == "boo")
-    println(f)
-
     g.map {
       case ((name, List(), List()), symbols) if (symbols.exists(_.isLazy)) =>
         q"override lazy val $name = $instance.$name"
@@ -67,5 +56,13 @@ object ProxyMacro {
       case t =>
         q"${s.name.toTermName}: ${t}"
     }
+  }
+
+  private def proxyBaseClasses[T](c: Context)(instance: c.Expr[Any])(implicit t: c.WeakTypeTag[T]) = {
+    import c.universe._
+    if (t.tpe =:= typeOf[Nothing])
+      instance.actualType.baseClasses.filter(_.asClass.isTrait).map(instance.actualType.baseType(_))
+    else
+      List(t.tpe)
   }
 }
