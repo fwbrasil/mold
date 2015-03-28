@@ -6,10 +6,9 @@ import language.experimental.macros
 import scala.reflect.runtime.{ universe => ru }
 import scala.reflect.ClassTag
 
-trait Stub
-trait Impl {
+trait Stub {
   def apply[T: ClassTag](selection: String)(params: List[List[Any]]): T
 }
 object Stub {
-  def apply[T](impl: Impl): Any = macro StubMacro.stub[T]
+  def apply[T](stub: Stub): Any = macro StubMacro.stub[T]
 }
