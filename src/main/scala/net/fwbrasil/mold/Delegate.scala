@@ -5,16 +5,13 @@ import language.dynamics
 import language.experimental.macros
 import scala.reflect.runtime.{ universe => ru }
 
-trait Delegate extends Dynamic {
-
-  val delegate: T forSome { type T }
+class Delegate[T](val underlying: T) extends Dynamic {
 
   def selectDynamic(selection: String): Any = macro DelegateMacro.delegateSelectDynamic
-  def applyDynamic(selection: String)(args: Any*): Any = macro DelegateMacro.delegateApplyDynamic1
-//  def applyDynamic[A, B](selection: String)(args1: Any*)(args2: Any*): Any = macro DelegateMacro.delegateApplyDynamic2
-  def around[T, P <: Params](selection: String, params: P)(f: P => T) = f(params)
+
+  def applyDynamic(selection: String)(args: Any*): Any = macro DelegateMacro.delegateApplyDynamic
   
-  override def toString = delegate.toString
-  override def hashCode = delegate.hashCode
-  override def equals(other: Any) = delegate.equals(other)
+  def applyDynamicNamed(selection: String)(args: (String, Any)*): Any = macro DelegateMacro.delegateApplyDynamicNamed
+  
+  def updateDynamic(selection: String)(value: Any): Any = macro DelegateMacro.delegateUpdateDynamic
 }

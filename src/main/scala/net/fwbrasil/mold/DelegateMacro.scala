@@ -6,28 +6,37 @@ import scala.reflect.macros.whitebox.Context
 object DelegateMacro {
 
   def delegateSelectDynamic(c: Context)(selection: c.Expr[String]) =
-    delegateApplyDynamic1(c)(selection)()
+    delegateMethodCall(c)(selection)(List())
 
-  def delegateApplyDynamic2(c: Context)(selection: c.Expr[String])(args1: c.Expr[Any]*)(args2: c.Expr[Any]*) = {
-    import c.universe._
-    q"null"
-  }
+  def delegateApplyDynamicNamed(c: Context)(selection: c.Expr[String])(args: c.Expr[(String, Any)]*) =
+    delegateMethodCall(c)(selection)(List(namedParams(c)(args.toList)))
 
-  def delegateApplyDynamic1(c: Context)(selection: c.Expr[String])(args: c.Expr[Any]*) = {
+  def delegateApplyDynamic(c: Context)(selection: c.Expr[String])(args: c.Expr[Any]*) =
+    delegateMethodCall(c)(selection)(List(args.toList.map(_.tree)))
+
+  def delegateUpdateDynamic(c: Context)(selection: c.Expr[String])(value: c.Expr[Any]) = {
     import c.universe._
-    println(args)
-    val proxy = c.prefix.tree
-    val method = termName(c)(selection)
-    val pack = c.mirror.staticPackage(DelegateMacro.this.getClass.getPackage.getName)
-    val params = TermName("Params" + args.size)
     q"""
-      val p = $pack.$params(..$args)
-      $proxy.around($selection, p)( 
-        _.apply($proxy.delegate.$method))
+        ${c.prefix.tree}.underlying.${method(c)(selection)} = $value
     """
   }
 
-  private def termName(c: Context)(selection: c.Expr[String]) = {
+  private def delegateMethodCall(c: Context)(selection: c.Expr[String])(args: List[List[c.universe.Tree]]) = {
+    import c.universe._
+    q"""
+        ${c.prefix.tree}.underlying.${method(c)(selection)}(...$args)
+    """
+  }
+
+  private def namedParams(c: Context)(args: List[c.Expr[(String, Any)]]) = {
+    import c.universe._
+    for (arg <- args) yield {
+      val Expr(Apply(_, List(Literal(Constant(name: String)), value))) = arg
+      q"${TermName(name)} = $value"
+    }
+  }
+
+  private def method(c: Context)(selection: c.Expr[String]) = {
     import c.universe._
     val Expr(Literal(Constant(methodName: String))) = selection
     TermName(methodName)
