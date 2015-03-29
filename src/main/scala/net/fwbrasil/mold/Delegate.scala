@@ -1,9 +1,7 @@
 package net.fwbrasil.mold
 
-import scala.reflect.macros.whitebox.Context
-import language.dynamics
-import language.experimental.macros
-import scala.reflect.runtime.{ universe => ru }
+import scala.language.dynamics
+import scala.language.experimental.macros
 
 class Delegate[T](val underlying: T) extends Dynamic {
 
