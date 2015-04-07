@@ -27,6 +27,10 @@ class ProxySpec extends Spec {
         proxy mustBe a[Trait]
         proxy mustBe a[Proxy]
       }
+      "(not supported) class with vars" in {
+        class Test(var a: String)
+        """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
+      }
       "(not supported) class without default constructor and that doesn't implement traits" in {
         class Test(a: String)
         """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
@@ -90,30 +94,6 @@ class ProxySpec extends Spec {
       val proxy = Proxy(new Test, dummyAround)
       proxy.i mustEqual 11
     }
-    //    "var" - {
-    //      "using the proxy type" in {
-    //        class Test {
-    //          var i: Int = 11
-    //        }
-    //        val subject = new Test
-    //        val proxy = Proxy(subject, dummyAround)
-    //        proxy.i mustEqual 11
-    //        proxy.i = 22
-    //        proxy.i mustEqual 22
-    //        subject.i mustEqual 22
-    //      }
-    //      "(not supported) using the proxied type" in {
-    //        class Test {
-    //          var i: Int = 11
-    //        }
-    //        val subject = new Test
-    //        val proxy: Test = Proxy(subject, dummyAround)
-    //        proxy.i mustEqual 11
-    //        proxy.i = 22
-    //        proxy.i mustEqual 22
-    //        subject.i must not equal 22
-    //      }
-    //    }
     "method" - {
       "without params" in {
         class Test {

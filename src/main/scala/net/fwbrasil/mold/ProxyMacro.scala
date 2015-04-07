@@ -27,7 +27,7 @@ object ProxyMacro {
 
   private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around]) = {
     import c.universe._
-    val wc = m.filter(!_.isConstructor).filter(!_.isSynthetic).collect { case m: MethodSymbol => m }
+    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
     wc.map {
 
       case symbol if (symbol.isLazy) =>
@@ -35,6 +35,9 @@ object ProxyMacro {
 
       case symbol if (symbol.isAccessor && !symbol.setter.isMethod) =>
         q"override val ${symbol.name} = impl.${symbol.name}"
+
+      case symbol if (symbol.isGetter) =>
+        c.abort(c.enclosingPosition, "Can't proxy a type that has vars.")
 
       case symbol =>
         val paramsNames = symbol.paramLists.map(_.map(_.name))
@@ -61,11 +64,21 @@ object ProxyMacro {
             def invoke(p: params.type): ${symbol.returnType} = impl.${symbol.name}(...$etuples)
             $around(${symbol.name.decoded}, invoke)(params)  
           """
-
-        val r = internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body)
+        val r = removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body))
         println(showRaw(r))
         r
     }
+  }
+
+  private def removeDefaultParams(c: Context)(defDef: c.universe.DefDef) = {
+    import c.universe._
+    val vparamss: List[List[ValDef]] = defDef.vparamss.map(_.map {
+      case param if (param.mods.hasFlag(Flag.IMPLICIT)) =>
+        q"implicit val ${param.name}: ${param.tpe}"
+      case param =>
+        q"val ${param.name}: ${param.tpe}"
+    })
+    DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, defDef.tpt, defDef.rhs)
   }
 
   private def proxyTypes(c: Context)(m: List[c.Symbol]) = {
