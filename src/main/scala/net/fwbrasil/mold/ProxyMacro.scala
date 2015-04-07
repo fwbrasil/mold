@@ -14,34 +14,57 @@ object ProxyMacro {
       c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement interfaces.")
     val proxyTrait = c.mirror.symbolOf[Proxy].toType
     val declarations = types.map(_.decls).flatten
-    q"""
+    val r = q"""
       new ..${types :+ proxyTrait} {
         override val impl = $instance
         ..${proxyTypes(c)(declarations)}
         ..${proxyMembers(c)(declarations, around)}
       }
     """
+    println(r)
+    c.untypecheck(r)
   }
 
   private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around]) = {
     import c.universe._
-    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
-    val g = wc.groupBy(s => (s.name, s.typeParams.map(c.internal.typeDef(_)), s.paramLists.map(_.map(s => methodParam(c)(s)))))
-    g.map {
-      case ((name, List(), List()), symbols) if (symbols.exists(_.isLazy)) =>
-        q"override lazy val $name = impl.$name"
-      case ((name, List(), List()), symbols) if (symbols.exists(_.isAccessor) && symbols.exists(!_.setter.isMethod)) =>
-        q"override val $name = impl.$name"
-      case ((name, List(), List()), symbols) if (symbols.exists(_.isGetter)) =>
-        q"def $name(implicit d: DummyImplicit) = impl.$name"
-      case ((name, List(), List(param)), symbols) if (symbols.exists(_.isSetter)) =>
-        q"def $name(..$param)(implicit d: DummyImplicit) = impl.$name(..$param)"
-      case ((name, List(), params), symbols) if (params.flatten.isEmpty) =>
-        q"override def $name = $around(${name.decoded}, (u: Unit) => impl.$name)(())"
-      case ((name, typeParams, params), symbols) if (params.flatten.isEmpty) =>
-        q"override def $name[..$typeParams] = $around(${name.decoded}, (u: Unit) => impl.$name[..${typeParams.map(_.name)}])(())"
-      case ((name, typeParams, params), symbols) =>
-        q"override def $name[..$typeParams](...$params) = $around(${name.decoded}, impl.$name[..${typeParams.map(_.name)}])(...$params)"
+    val wc = m.filter(!_.isConstructor).filter(!_.isSynthetic).collect { case m: MethodSymbol => m }
+    wc.map {
+
+      case symbol if (symbol.isLazy) =>
+        q"override lazy val ${symbol.name} = impl.${symbol.name}"
+
+      case symbol if (symbol.isAccessor && !symbol.setter.isMethod) =>
+        q"override val ${symbol.name} = impl.${symbol.name}"
+
+      case symbol =>
+        val paramsNames = symbol.paramLists.map(_.map(_.name))
+
+        val tuples = paramsNames.map {
+          case params if (params.size == 0) => q"Tuple1(Unit)"
+          case params if (params.size == 1) => q"Tuple1(..$params)"
+          case params                       => q"(((..$params)))"
+        } match {
+          case params if (params.size == 0) => q"Tuple1(Unit)"
+          case params if (params.size == 1) => q"Tuple1(..$params)"
+          case params                       => q"(((..$params)))"
+        }
+
+        val etuples =
+          for (i <- 1 to paramsNames.size if (paramsNames.size > 0)) yield {
+            def term(i: Int) = TermName(s"_${i}")
+            for (j <- 1 to paramsNames(i - 1).size) yield q"p.${term(i)}.${term(j)}"
+          }
+
+        val body =
+          q"""
+            val params = $tuples
+            def invoke(p: params.type): ${symbol.returnType} = impl.${symbol.name}(...$etuples)
+            $around(${symbol.name.decoded}, invoke)(params)  
+          """
+
+        val r = internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body)
+        println(showRaw(r))
+        r
     }
   }
 
@@ -50,25 +73,6 @@ object ProxyMacro {
     m.filter(_.isType).groupBy(_.name.toTypeName).collect {
       case (name, symbols) =>
         q"override type $name = impl.$name"
-    }
-  }
-
-  private def methodParam(c: Context)(s: c.Symbol) = {
-    import c.universe._
-    println("AAAAAAAAAAAAAAAAAAAAAAAAAAAA", s)
-    if (s.isImplicit)
-      q"${s.name.toTermName}: ${paramType(c)(s)}"
-    else
-      q"${s.name.toTermName}: ${paramType(c)(s)}"
-  }
-
-  private def paramType(c: Context)(s: c.Symbol) = {
-    import c.universe._
-    s.typeSignature match {
-      case TypeRef(ThisType(_), name, List()) =>
-        q"impl.$name"
-      case t =>
-        q"$t"
     }
   }
 

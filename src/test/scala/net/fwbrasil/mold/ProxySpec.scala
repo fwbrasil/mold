@@ -90,30 +90,30 @@ class ProxySpec extends Spec {
       val proxy = Proxy(new Test, dummyAround)
       proxy.i mustEqual 11
     }
-    "var" - {
-      "using the proxy type" in {
-        class Test {
-          var i: Int = 11
-        }
-        val subject = new Test
-        val proxy = Proxy(subject, dummyAround)
-        proxy.i mustEqual 11
-        proxy.i = 22
-        proxy.i mustEqual 22
-        subject.i mustEqual 22
-      }
-      "(not supported) using the proxied type" in {
-        class Test {
-          var i: Int = 11
-        }
-        val subject = new Test
-        val proxy: Test = Proxy(subject, dummyAround)
-        proxy.i mustEqual 11
-        proxy.i = 22
-        proxy.i mustEqual 22
-        subject.i must not equal 22
-      }
-    }
+    //    "var" - {
+    //      "using the proxy type" in {
+    //        class Test {
+    //          var i: Int = 11
+    //        }
+    //        val subject = new Test
+    //        val proxy = Proxy(subject, dummyAround)
+    //        proxy.i mustEqual 11
+    //        proxy.i = 22
+    //        proxy.i mustEqual 22
+    //        subject.i mustEqual 22
+    //      }
+    //      "(not supported) using the proxied type" in {
+    //        class Test {
+    //          var i: Int = 11
+    //        }
+    //        val subject = new Test
+    //        val proxy: Test = Proxy(subject, dummyAround)
+    //        proxy.i mustEqual 11
+    //        proxy.i = 22
+    //        proxy.i mustEqual 22
+    //        subject.i must not equal 22
+    //      }
+    //    }
     "method" - {
       "without params" in {
         class Test {
@@ -184,36 +184,36 @@ class ProxySpec extends Spec {
           proxy.a(10) mustEqual "a10"
         }
       }
-      //      "with type params" - {
-      //        "empty value params" in {
-      //          class Test {
-      //            def a[T] = "a"
-      //          }
-      //          val proxy = Proxy(new Test, dummyAround)
-      //          proxy.a[Int] mustEqual "a10"
-      //        }
-      //        "class tag" in {
-      //          class Test {
-      //            def a[T: ClassTag] = classTag[T]
-      //          }
-      //          val proxy = Proxy(new Test, dummyAround)
-      //          proxy.a[Int] mustEqual classTag[Int]
-      //        }
-      //        "non-empty value params" in {
-      //          class Test {
-      //            def a[T: ClassTag](v: T) = (classTag[T], v)
-      //          }
-      //          val proxy = Proxy(new Test, dummyAround)
-      //          proxy.a[Int](10) mustEqual (classTag[Int], 10)
-      //        }
-      //        "curried values" in {
-      //          class Test {
-      //            def a[T: ClassTag, U: ClassTag](t: T)(u: U) = (classTag[T], classTag[U], t, u)
-      //          }
-      //          val proxy = Proxy(new Test, dummyAround)
-      //          proxy.a[Int, String](10)("a") mustEqual (classTag[Int], classTag[String], 10, "a")
-      //        }
-      //      }
+      "with type params" - {
+        "empty value params" in {
+          class Test {
+            def a[T] = "a"
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.a[Int] mustEqual "a"
+        }
+        "class tag" in {
+          class Test {
+            def aaa[T: ClassTag] = classTag[T]
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.aaa[Int] mustEqual classTag[Int]
+        }
+        "non-empty value params" in {
+          class Test {
+            def a[T: ClassTag](v: T) = (classTag[T], v)
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.a[Int](10) mustEqual (classTag[Int], 10)
+        }
+        "curried values" in {
+          class Test {
+            def a[T: ClassTag, U: ClassTag](t: T)(u: U) = (classTag[T], classTag[U], t, u)
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.a[Int, String](10)("a") mustEqual (classTag[Int], classTag[String], 10, "a")
+        }
+      }
       "implicit values" - {
 
       }
