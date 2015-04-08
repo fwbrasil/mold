@@ -12,6 +12,7 @@ object ProxyMacro {
     import c.universe._
     if (types.isEmpty)
       c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement interfaces.")
+      
     val proxyTrait = c.mirror.symbolOf[Proxy].toType
     val declarations = types.map(_.decls).flatten
     val r = q"""
@@ -22,13 +23,14 @@ object ProxyMacro {
       }
     """
     println(r)
-    c.untypecheck(r)
+    r
   }
 
   private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around]) = {
     import c.universe._
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
-    wc.map {
+    val g = wc.groupBy(m => (m.name, showRaw(m.paramLists))).values.map(_.head)
+    g.map {
 
       case symbol if (symbol.isLazy) =>
         q"override lazy val ${symbol.name} = impl.${symbol.name}"
@@ -40,6 +42,9 @@ object ProxyMacro {
         c.abort(c.enclosingPosition, "Can't proxy a type that has vars.")
 
       case symbol =>
+        
+        val typeParams = symbol.typeParams.map(_.name)
+        
         val paramsNames = symbol.paramLists.map(_.map(_.name))
 
         val tuples = paramsNames.map {
@@ -61,12 +66,10 @@ object ProxyMacro {
         val body =
           q"""
             val params = $tuples
-            def invoke(p: params.type): ${symbol.returnType} = impl.${symbol.name}(...$etuples)
+            def invoke(p: params.type) = impl.${symbol.name}[..$typeParams](...$etuples)
             $around(${symbol.name.decoded}, invoke)(params)  
           """
-        val r = removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body))
-        println(showRaw(r))
-        r
+        removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body))
     }
   }
 
@@ -78,7 +81,7 @@ object ProxyMacro {
       case param =>
         q"val ${param.name}: ${param.tpe}"
     })
-    DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, defDef.tpt, defDef.rhs)
+    c.untypecheck(DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, TypeTree(), defDef.rhs))
   }
 
   private def proxyTypes(c: Context)(m: List[c.Symbol]) = {
@@ -92,7 +95,7 @@ object ProxyMacro {
   private def proxyBaseClasses[T](c: Context)(instance: c.Expr[Any])(implicit t: c.WeakTypeTag[T]) = {
     import c.universe._
     if (t.tpe =:= typeOf[Nothing])
-      if (hasEmptyConstructor(c)(instance.actualType) && !instance.actualType.typeSymbol.isFinal)
+      if (hasEmptyConstructor(c)(instance.actualType) && !instance.actualType.typeSymbol.isFinal && !instance.actualType.typeSymbol.asClass.isSealed)
         List(instance.actualType)
       else
         instance.actualType.baseClasses.filter(_.asClass.isTrait).map(instance.actualType.baseType(_))

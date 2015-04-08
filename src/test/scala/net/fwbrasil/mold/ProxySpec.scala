@@ -27,6 +27,14 @@ class ProxySpec extends Spec {
         proxy mustBe a[Trait]
         proxy mustBe a[Proxy]
       }
+      "selaed class that extends traits" in {
+        trait Trait
+        sealed class Test extends Trait
+        val proxy = Proxy(new Test, dummyAround)
+        proxy must not be a[Test]
+        proxy mustBe a[Trait]
+        proxy mustBe a[Proxy]
+      }
       "(not supported) class with vars" in {
         class Test(var a: String)
         """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
@@ -193,14 +201,65 @@ class ProxySpec extends Spec {
           val proxy = Proxy(new Test, dummyAround)
           proxy.a[Int, String](10)("a") mustEqual (classTag[Int], classTag[String], 10, "a")
         }
+        "parametrized type" in {
+          trait Trait[T] {
+            def a(v: T): T
+          }
+          final class Test extends Trait[Int] {
+            def a(v: Int) = v + 1
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.a(1) mustEqual 2
+        }
+      }
+      "overloaded methods" in {
+        trait Trait1 {
+          def a: Int
+        }
+        trait Trait2 {
+          def a: Int
+        }
+        final class Test extends Trait1 with Trait2 {
+          def a = 42
+        }
+        val proxy = Proxy(new Test, dummyAround)
+        proxy.a mustEqual 42
       }
       "implicit values" - {
-
+        class Test {
+          implicit val i = 42
+        }
+        val proxy = Proxy(new Test, dummyAround)
+        import proxy._
+        implicitly[Int] mustEqual 42
       }
       "implicit methods" - {
-
+        class Test {
+          implicit def method(i: Int): String = "a" + i
+        }
+        val proxy = new Test
+        import proxy._
+        (42: String) mustEqual "a42"
       }
     }
+  }
+
+  "proxies scala types" - {
+    "String" in {
+      val string = "a"
+      val proxy = Proxy(string, dummyAround)
+      proxy.charAt(0) mustEqual 'a'
+    }
+    "Tuple" in {
+      val tuple = (1, 2)
+      val proxy = Proxy(tuple, dummyAround)
+      proxy._2 mustEqual 2
+    }
+//    "List" in {
+//      val list = List(1, 2)
+//      val proxy = Proxy(list, dummyAround)
+//      list.sum mustEqual 3
+//    }
   }
 
   "method interception" - {
