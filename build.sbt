@@ -16,6 +16,8 @@ releaseSettings
 
 publishMavenStyle := true
 
+//scalacOptions ++= Seq("-Ymacro-debug-verbose")
+
 publishTo := {
   val nexus = "https://oss.sonatype.org/"
   if (isSnapshot.value)

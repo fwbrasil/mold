@@ -12,9 +12,10 @@ object ProxyMacro {
     import c.universe._
     if (types.isEmpty)
       c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement interfaces.")
-      
+
     val proxyTrait = c.mirror.symbolOf[Proxy].toType
-    val declarations = types.map(_.decls).flatten
+    val ignore = Set("finalize")
+    val declarations = instance.actualType.members.toList.filter(_.overrides.nonEmpty)
     val r = q"""
       new ..${types :+ proxyTrait} {
         override val impl = $instance
@@ -22,15 +23,14 @@ object ProxyMacro {
         ..${proxyMembers(c)(declarations, around)}
       }
     """
-    println(r)
+    c.untypecheck(r)
     r
   }
 
   private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around]) = {
     import c.universe._
-    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol => m }
-    val g = wc.groupBy(m => (m.name, showRaw(m.paramLists))).values.map(_.head)
-    g.map {
+    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.isFinal && m.name.decoded != "finalize" && m.name.decoded != "clone") => m }
+    wc.map {
 
       case symbol if (symbol.isLazy) =>
         q"override lazy val ${symbol.name} = impl.${symbol.name}"
@@ -42,9 +42,9 @@ object ProxyMacro {
         c.abort(c.enclosingPosition, "Can't proxy a type that has vars.")
 
       case symbol =>
-        
+
         val typeParams = symbol.typeParams.map(_.name)
-        
+
         val paramsNames = symbol.paramLists.map(_.map(_.name))
 
         val tuples = paramsNames.map {
@@ -81,7 +81,7 @@ object ProxyMacro {
       case param =>
         q"val ${param.name}: ${param.tpe}"
     })
-    c.untypecheck(DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, TypeTree(), defDef.rhs))
+    DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, TypeTree(), defDef.rhs)
   }
 
   private def proxyTypes(c: Context)(m: List[c.Symbol]) = {
