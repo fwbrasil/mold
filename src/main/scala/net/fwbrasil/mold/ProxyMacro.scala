@@ -16,18 +16,20 @@ object ProxyMacro {
     val proxyTrait = c.mirror.symbolOf[Proxy].toType
     val ignore = Set("finalize")
     val declarations = instance.actualType.members.toList.filter(_.overrides.nonEmpty)
+    val typeParams = instance.actualType.typeSymbol.asClass.typeParams.zip(instance.actualType.typeArgs).toMap
+    println(typeParams)
     val r = q"""
       new ..${types :+ proxyTrait} {
         override val impl = $instance
         ..${proxyTypes(c)(declarations)}
-        ..${proxyMembers(c)(declarations, around)}
+        ..${proxyMembers(c)(declarations, around, typeParams)}
       }
     """
-    c.untypecheck(r)
+    println(r)
     r
   }
 
-  private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around]) = {
+  private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around], typeParamsMap: Map[c.Symbol, c.Type]) = {
     import c.universe._
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.isFinal && m.name.decoded != "finalize" && m.name.decoded != "clone") => m }
     wc.map {
@@ -69,11 +71,11 @@ object ProxyMacro {
             def invoke(p: params.type) = impl.${symbol.name}[..$typeParams](...$etuples)
             $around(${symbol.name.decoded}, invoke)(params)  
           """
-        removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body))
+        removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body), typeParamsMap)
     }
   }
 
-  private def removeDefaultParams(c: Context)(defDef: c.universe.DefDef) = {
+  private def removeDefaultParams(c: Context)(defDef: c.universe.DefDef, typeParams: Map[c.Symbol, c.Type]) = {
     import c.universe._
     val vparamss: List[List[ValDef]] = defDef.vparamss.map(_.map {
       case param if (param.mods.hasFlag(Flag.IMPLICIT)) =>
@@ -81,7 +83,17 @@ object ProxyMacro {
       case param =>
         q"val ${param.name}: ${param.tpe}"
     })
-    DefDef(defDef.mods, defDef.name, defDef.tparams, vparamss, TypeTree(), defDef.rhs)
+    val typeParamsByName = typeParams.map(t => t._1.name.decodedName -> t._2).toMap
+    val tparams = defDef.tparams.map { param =>
+      val rhs =
+        param.rhs match {
+          case TypeBoundsTree(lo, hi) => 
+            TypeBoundsTree(TypeTree(typeParamsByName.getOrElse(lo.symbol.name.decodedName, lo.tpe)), TypeTree(typeParamsByName.getOrElse(hi.symbol.name.decodedName, hi.tpe)))
+          case other                  => other
+        }
+      TypeDef(param.mods, param.name, param.tparams, rhs)
+    }
+    DefDef(defDef.mods, defDef.name, tparams, vparamss, TypeTree(), defDef.rhs)
   }
 
   private def proxyTypes(c: Context)(m: List[c.Symbol]) = {

@@ -211,6 +211,16 @@ class ProxySpec extends Spec {
           val proxy = Proxy(new Test, dummyAround)
           proxy.a(1) mustEqual 2
         }
+        "bounded type" in {
+          trait Trait[T] {
+            def a[B <: T](value: B): String
+          }
+          class Testd[T] extends Trait[T] {
+            def a[B <: T](value: B) = "a" + value
+          }
+          val proxy = Proxy(new Testd[Int], dummyAround)
+          proxy.a(42) mustEqual "a42"
+        }
       }
       "overloaded methods" in {
         trait Trait1 {
@@ -225,7 +235,7 @@ class ProxySpec extends Spec {
         val proxy = Proxy(new Test, dummyAround)
         proxy.a mustEqual 42
       }
-      "implicit values" - {
+      "implicit values" in {
         class Test {
           implicit val i = 42
         }
@@ -233,7 +243,7 @@ class ProxySpec extends Spec {
         import proxy._
         implicitly[Int] mustEqual 42
       }
-      "implicit methods" - {
+      "implicit methods" in {
         class Test {
           implicit def method(i: Int): String = "a" + i
         }
@@ -241,6 +251,13 @@ class ProxySpec extends Spec {
         import proxy._
         (42: String) mustEqual "a42"
       }
+//      "not visible methods" in {
+//        trait Trait {
+//          protected[this] def a = "a"
+//        }
+//        class Testf extends Trait
+//        val proxy = Proxy[Trait](new Testf, dummyAround)
+//      }
     }
   }
 
