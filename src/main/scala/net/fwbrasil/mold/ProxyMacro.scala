@@ -11,23 +11,24 @@ object ProxyMacro {
   private def createProxy(c: Context)(types: List[c.Type], instance: c.Expr[Any], around: c.Expr[Around]) = {
     import c.universe._
     if (types.isEmpty)
-      c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement interfaces.")
-
-    val proxyTrait = c.mirror.symbolOf[Proxy].toType
-    val ignore = Set("finalize")
+      c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement traits.")
     val declarations = instance.actualType.members.toList.filter(_.overrides.nonEmpty)
     val typeParams = instance.actualType.typeSymbol.asClass.typeParams.zip(instance.actualType.typeArgs).toMap
     println(typeParams)
     val r = q"""
-      new ..${types :+ proxyTrait} {
+      new ..${types :+ proxyTrait(c)} {
         override val impl = $instance
         ..${proxyTypes(c)(declarations)}
         ..${proxyMembers(c)(declarations, around, typeParams)}
       }
     """
-    println(r)
-    r
+    val u = c.untypecheck(r)
+    println(u)
+    u
   }
+
+  private def proxyTrait(c: Context) =
+    c.mirror.symbolOf[Proxy].toType
 
   private def proxyMembers(c: Context)(m: List[c.Symbol], around: c.Expr[Around], typeParamsMap: Map[c.Symbol, c.Type]) = {
     import c.universe._
@@ -65,13 +66,24 @@ object ProxyMacro {
             for (j <- 1 to paramsNames(i - 1).size) yield q"p.${term(i)}.${term(j)}"
           }
 
+        val call =
+          if (symbol.isProtectedThis || symbol.isPrivateThis)
+            q"???"
+          else
+            q"impl.${symbol.name}[..$typeParams](...$etuples)"
+
         val body =
           q"""
             val params = $tuples
-            def invoke(p: params.type) = impl.${symbol.name}[..$typeParams](...$etuples)
+            def invoke(p: params.type) = $call
             $around(${symbol.name.decoded}, invoke)(params)  
           """
-        removeDefaultParams(c)(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body), typeParamsMap)
+        val mods =
+          if (symbol.overrides.nonEmpty)
+            Modifiers(Flag.OVERRIDE)
+          else
+            Modifiers()
+        removeDefaultParams(c)(internal.defDef(symbol, mods, body), typeParamsMap)
     }
   }
 
@@ -87,9 +99,9 @@ object ProxyMacro {
     val tparams = defDef.tparams.map { param =>
       val rhs =
         param.rhs match {
-          case TypeBoundsTree(lo, hi) => 
+          case TypeBoundsTree(lo, hi) =>
             TypeBoundsTree(TypeTree(typeParamsByName.getOrElse(lo.symbol.name.decodedName, lo.tpe)), TypeTree(typeParamsByName.getOrElse(hi.symbol.name.decodedName, hi.tpe)))
-          case other                  => other
+          case other => other
         }
       TypeDef(param.mods, param.name, param.tparams, rhs)
     }

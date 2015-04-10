@@ -253,25 +253,29 @@ class ProxySpec extends Spec {
       }
 //      "not visible methods" in {
 //        trait Trait {
-//          protected[this] def a = "a"
+//          def a = _a
+//          protected[this] def _a: String
 //        }
-//        class Testf extends Trait
+//        class Testf extends Trait {
+//          override protected[this] def _a = "a"
+//        }
 //        val proxy = Proxy[Trait](new Testf, dummyAround)
+//        proxy.a mustEqual "a"
 //      }
     }
   }
 
   "proxies scala types" - {
-    "String" in {
-      val string = "a"
-      val proxy = Proxy(string, dummyAround)
-      proxy.charAt(0) mustEqual 'a'
-    }
-    "Tuple" in {
-      val tuple = (1, 2)
-      val proxy = Proxy(tuple, dummyAround)
-      proxy._2 mustEqual 2
-    }
+//    "String" in {
+//      val string = "a"
+//      val proxy = Proxy(string, dummyAround)
+//      proxy.charAt(0) mustEqual 'a'
+//    }
+//    "Tuple" in {
+//      val tuple = (1, 2)
+//      val proxy = Proxy(tuple, dummyAround)
+//      proxy._2 mustEqual 2
+//    }
 //    "List" in {
 //      val list = List(1, 2)
 //      val proxy = Proxy(list, dummyAround)
