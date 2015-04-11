@@ -4,47 +4,38 @@ import language.experimental.macros
 import scala.reflect.macros.whitebox.Context
 
 class ProxyMacro(val c: Context) {
-  
+
   import c.universe._
 
   def proxy[T](instance: Expr[Any], around: Expr[Around])(implicit t: WeakTypeTag[T]) =
-    createProxy(proxyBaseClasses[T](instance), instance, around)
+    createProxy(proxyBaseClasses[T](instance.actualType), instance, around)
 
   private def createProxy(types: List[Type], instance: Expr[Any], around: Expr[Around]) = {
-    if (types.isEmpty)
-      c.error(c.enclosingPosition, "The proxied class must have an empty constructor or implement traits.")
     val declarations = instance.actualType.members.toList.filter(_.overrides.nonEmpty)
     val typeParams = instance.actualType.typeSymbol.asClass.typeParams.zip(instance.actualType.typeArgs).toMap
-    println(typeParams)
-    val r = q"""
-      new ..${types :+ proxyTrait} {
+    val r = 
+    q"""
+      new ..${types :+ c.typeOf[Proxy]} {
         override val impl = $instance
         private val around = $around
         ..${proxyTypes(declarations)}
         ..${proxyMembers(declarations, typeParams)}
       }
     """
-    val u = c.untypecheck(r)
-    println(u)
-    u
+        println(r)
+        r
   }
 
-  private def proxyTrait =
-    c.mirror.symbolOf[Proxy].toType
-
   private def proxyMembers(m: List[Symbol], typeParamsMap: Map[Symbol, Type]) = {
-    
-    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.isFinal && m.name.decoded != "finalize" && m.name.decoded != "clone") => m }
+
+    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.isFinal) => m }
     wc.map {
-
-      case symbol if (symbol.isLazy) =>
-        q"override lazy val ${symbol.name} = impl.${symbol.name}"
-
-      case symbol if (symbol.isAccessor && !symbol.setter.isMethod) =>
-        q"override val ${symbol.name} = impl.${symbol.name}"
 
       case symbol if (symbol.isGetter) =>
         c.abort(c.enclosingPosition, "Can't proxy a type that has vars.")
+
+      case symbol if (symbol.isAccessor) =>
+        internal.valDef(symbol, q"impl.${symbol.name}")
 
       case symbol =>
 
@@ -90,7 +81,7 @@ class ProxyMacro(val c: Context) {
   }
 
   private def removeDefaultParams(defDef: DefDef, typeParams: Map[Symbol, Type]) = {
-    
+
     val vparamss: List[List[ValDef]] = defDef.vparamss.map(_.map {
       case param if (param.mods.hasFlag(Flag.IMPLICIT)) =>
         q"implicit val ${param.name}: ${param.tpe}"
@@ -110,23 +101,34 @@ class ProxyMacro(val c: Context) {
     DefDef(defDef.mods, defDef.name, tparams, vparamss, TypeTree(), defDef.rhs)
   }
 
-  private def proxyTypes(m: List[Symbol]) = 
+  private def proxyTypes(m: List[Symbol]) =
     m.filter(_.isType).groupBy(_.name.toTypeName).collect {
       case (name, symbols) =>
         q"override type $name = impl.$name"
     }
 
-  private def proxyBaseClasses[T](instance: Expr[Any])(implicit t: WeakTypeTag[T]) = {
+  private def proxyBaseClasses[T](instanceType: Type)(implicit t: WeakTypeTag[T]) = {
     if (t.tpe =:= typeOf[Nothing])
-      if (hasEmptyConstructor(instance.actualType) && !instance.actualType.typeSymbol.isFinal && !instance.actualType.typeSymbol.asClass.isSealed)
-        List(instance.actualType)
+      if (isExtensible(instanceType))
+        List(instanceType)
       else
-        instance.actualType.baseClasses.filter(_.asClass.isTrait).map(instance.actualType.baseType(_))
-    else if (instance.actualType <:< t.tpe)
+        inferBaseTraits(instanceType)
+    else if (instanceType <:< t.tpe)
       List(t.tpe)
     else
       c.abort(c.enclosingPosition, s"The value doesn't implement the proxied type.")
   }
+
+  private def inferBaseTraits(typ: Type) =
+    typ.baseClasses.filter(_.asClass.isTrait).map(typ.baseType(_)) match {
+      case Nil =>
+        c.abort(c.enclosingPosition, "The proxied class must have an empty constructor or implement traits.")
+      case traits =>
+        traits
+    }
+
+  private def isExtensible(typ: Type) =
+    hasEmptyConstructor(typ) && !typ.typeSymbol.isFinal && !typ.typeSymbol.asClass.isSealed
 
   private def hasEmptyConstructor(t: Type) =
     t.decls.collect {
