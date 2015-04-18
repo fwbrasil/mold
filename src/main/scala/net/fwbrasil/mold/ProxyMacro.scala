@@ -11,31 +11,49 @@ class ProxyMacro(val c: Context) {
     createProxy(proxyBaseClasses[T](instance.actualType), instance, around)
 
   private def createProxy(types: List[Type], instance: Expr[Any], around: Expr[Around]) = {
-    val declarations = instance.actualType.members.toList.filter(_.overrides.nonEmpty)
-    val typeParams = instance.actualType.typeSymbol.asClass.typeParams.zip(instance.actualType.typeArgs).toMap
-    val r = 
-    q"""
+    
+    val members =
+      types.map { typ =>
+        typ.typeSymbol.asClass.selfType
+        typ.members.toList.map {
+          case symbol: MethodSymbol =>
+            val defDef = internal.defDef(symbol, Modifiers(Flag.OVERRIDE), q"???")
+            workaroundBugs(defDef, typ).symbol
+          case other => other
+        }
+      }.flatten
+        .groupBy(m => (m.name, showRaw(m.typeSignature)))
+        .filterNot(_._2.exists(_.isFinal))
+        .filterNot(_._2.exists(_.owner == typeOf[Any].typeSymbol))
+        .filterNot(_._2.exists(_.owner == typeOf[Object].typeSymbol))
+        .values.map(_.head).toList
+
+    val r =
+      q"""
       new ..${types :+ c.typeOf[Proxy]} {
         override val impl = $instance
         private val around = $around
-        ..${proxyTypes(declarations)}
-        ..${proxyMembers(declarations, typeParams)}
+        ..${proxyTypes(members)}
+        ..${proxyMembers(members)}
       }
     """
-        println(r)
-        r
+    val u = c.untypecheck(r)
+    //    println(u)
+    u
   }
 
-  private def proxyMembers(m: List[Symbol], typeParamsMap: Map[Symbol, Type]) = {
+  private def proxyMembers(m: List[Symbol]) = {
 
-    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.isFinal) => m }
+    val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.name.decoded.contains("$default$")) => m }
+
     wc.map {
 
-      case symbol if (symbol.isGetter) =>
+      case symbol if (symbol.isSetter) =>
         c.abort(c.enclosingPosition, "Can't proxy a type that has vars.")
 
-      case symbol if (symbol.isAccessor) =>
-        internal.valDef(symbol, q"impl.${symbol.name}")
+      case symbol if (symbol.isGetter) =>
+        val valDef = internal.valDef(symbol, q"impl.${symbol.name}")
+        ValDef(Modifiers(Flag.OVERRIDE), valDef.name, TypeTree(), valDef.rhs)
 
       case symbol =>
 
@@ -60,7 +78,7 @@ class ProxyMacro(val c: Context) {
           }
 
         val call =
-          if (symbol.isProtectedThis || symbol.isPrivateThis)
+          if (symbol.isProtected || symbol.isPrivate)
             q"???"
           else
             q"impl.${symbol.name}[..$typeParams](...$etuples)"
@@ -71,29 +89,25 @@ class ProxyMacro(val c: Context) {
             def invoke(p: params.type) = $call
             around(${symbol.name.decoded}, invoke)(params)  
           """
-        val mods =
-          if (symbol.overrides.nonEmpty)
-            Modifiers(Flag.OVERRIDE)
-          else
-            Modifiers()
-        removeDefaultParams(internal.defDef(symbol, mods, body), typeParamsMap)
+
+        internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body)
     }
   }
 
-  private def removeDefaultParams(defDef: DefDef, typeParams: Map[Symbol, Type]) = {
-
+  private def workaroundBugs(defDef: DefDef, owner: Type) = {
     val vparamss: List[List[ValDef]] = defDef.vparamss.map(_.map {
       case param if (param.mods.hasFlag(Flag.IMPLICIT)) =>
         q"implicit val ${param.name}: ${param.tpe}"
       case param =>
         q"val ${param.name}: ${param.tpe}"
     })
-    val typeParamsByName = typeParams.map(t => t._1.name.decodedName -> t._2).toMap
     val tparams = defDef.tparams.map { param =>
       val rhs =
         param.rhs match {
           case TypeBoundsTree(lo, hi) =>
-            TypeBoundsTree(TypeTree(typeParamsByName.getOrElse(lo.symbol.name.decodedName, lo.tpe)), TypeTree(typeParamsByName.getOrElse(hi.symbol.name.decodedName, hi.tpe)))
+            val typeParamsByName = owner.typeSymbol.asClass.typeParams.zip(owner.typeArgs).toMap
+            println(typeParamsByName)
+            TypeBoundsTree(TypeTree(typeParamsByName.getOrElse(lo.symbol, lo.tpe)), TypeTree(typeParamsByName.getOrElse(hi.symbol, hi.tpe)))
           case other => other
         }
       TypeDef(param.mods, param.name, param.tparams, rhs)

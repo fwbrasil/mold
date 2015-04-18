@@ -96,10 +96,10 @@ class ProxySpec extends Spec {
       """val a: proxy.T = "a"""" mustNot typeCheck
     }
     "val" - {
-      class Test {
+      class Testr {
         val i = 11
       }
-      val proxy = Proxy(new Test, dummyAround)
+      val proxy = Proxy(new Testr, dummyAround)
       proxy.i mustEqual 11
     }
     "method" - {
@@ -222,17 +222,17 @@ class ProxySpec extends Spec {
           proxy.a(42) mustEqual "a42"
         }
       }
-      "overloaded methods" in {
+      "overridden methods" in {
         trait Trait1 {
           def a: Int
         }
         trait Trait2 {
           def a: Int
         }
-        final class Test extends Trait1 with Trait2 {
+        final class Testg extends Trait1 with Trait2 {
           def a = 42
         }
-        val proxy = Proxy(new Test, dummyAround)
+        val proxy = Proxy(new Testg, dummyAround)
         proxy.a mustEqual 42
       }
       "implicit values" in {
@@ -251,36 +251,44 @@ class ProxySpec extends Spec {
         import proxy._
         (42: String) mustEqual "a42"
       }
-//      "not visible methods" in {
-//        trait Trait {
-//          def a = _a
-//          protected[this] def _a: String
-//        }
-//        class Testf extends Trait {
-//          override protected[this] def _a = "a"
-//        }
-//        val proxy = Proxy[Trait](new Testf, dummyAround)
-//        proxy.a mustEqual "a"
-//      }
+      "not visible methods" in {
+        trait Trait {
+          def a = _a
+          protected[this] def _a: String
+        }
+        class Testf extends Trait {
+          override protected[this] def _a = "a"
+        }
+        val proxy = Proxy[Trait](new Testf, dummyAround)
+        proxy.a mustEqual "a"
+      }
+      "(not supported) not overriden methods" in {
+        trait Trait
+        final class Testk extends Trait {
+          def a = "a"
+        }
+        val proxy = Proxy(new Testk, dummyAround)
+        """proxy.a mustEqual "a"""" mustNot typeCheck
+      }
     }
   }
 
   "proxies scala types" - {
-//    "String" in {
-//      val string = "a"
-//      val proxy = Proxy(string, dummyAround)
-//      proxy.charAt(0) mustEqual 'a'
-//    }
-//    "Tuple" in {
-//      val tuple = (1, 2)
-//      val proxy = Proxy(tuple, dummyAround)
-//      proxy._2 mustEqual 2
-//    }
-//    "List" in {
-//      val list = List(1, 2)
-//      val proxy = Proxy(list, dummyAround)
+    "String" in {
+      val string = "a"
+      val proxy = Proxy(string, dummyAround)
+      proxy.charAt(0) mustEqual 'a'
+    }
+    "Tuple" in {
+      val tuple = (1, 2)
+      val proxy = Proxy(tuple, dummyAround)
+      proxy._2 mustEqual 2
+    }
+    "List" in {
+      val list = List(1, 2)
+      val proxy = Proxy(list, dummyAround)
 //      list.sum mustEqual 3
-//    }
+    }
   }
 
   "method interception" - {
