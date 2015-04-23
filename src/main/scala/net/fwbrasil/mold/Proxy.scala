@@ -20,5 +20,5 @@ trait Around {
 }
 
 object Proxy {
-  def apply[T](instance: Any, around: Around): Any = macro ProxyMacro.proxy[T]
+  def apply[T](instance: T, around: Around): Any = macro ProxyMacro.proxy[T]
 }

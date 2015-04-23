@@ -1,6 +1,8 @@
 package net.fwbrasil.mold
 
 import scala.reflect._
+import scala.collection.TraversableLike
+import scala.collection.generic.CanBuildFrom
 
 class ProxySpec extends Spec {
 
@@ -12,40 +14,21 @@ class ProxySpec extends Spec {
         proxy mustBe a[Test]
         proxy mustBe a[Proxy]
       }
-      "final class with default constructor" in {
-        trait Trait
-        final class Test extends Trait
-        val proxy = Proxy(new Test, dummyAround)
-        proxy must not be a[Test]
-        proxy mustBe a[Proxy]
-      }
-      "class that extends traits" in {
-        trait Trait
-        class Test(a: String) extends Trait
-        val proxy = Proxy(new Test("a"), dummyAround)
-        proxy must not be a[Test]
-        proxy mustBe a[Trait]
-        proxy mustBe a[Proxy]
-      }
-      "selaed class that extends traits" in {
-        trait Trait
-        sealed class Test extends Trait
-        val proxy = Proxy(new Test, dummyAround)
-        proxy must not be a[Test]
-        proxy mustBe a[Trait]
-        proxy mustBe a[Proxy]
-      }
       "(not supported) class with vars" in {
         class Test(var a: String)
         """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
       }
-      "(not supported) class without default constructor and that doesn't implement traits" in {
+      "(not supported) class without default constructor" in {
         class Test(a: String)
         """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
       }
-      "(not supported) final class that doesn't implement traits" in {
+      "(not supported) final class" in {
         final class Test(a: String)
         """Proxy(new Test("a"), dummyAround)""" mustNot typeCheck
+      }
+      "(not supported) selaed class" in {
+        sealed trait Test
+        """Proxy(new Test {}, dummyAround)""" mustNot typeCheck
       }
     }
     "type parameter defined" - {
@@ -168,7 +151,7 @@ class ProxySpec extends Spec {
             type T = Int
             def a(i: T) = "a" + i
           }
-          val proxy = Proxy(new Test, dummyAround)
+          val proxy = Proxy[Trait](new Test, dummyAround)
           proxy.a(10) mustEqual "a10"
         }
       }
@@ -208,9 +191,17 @@ class ProxySpec extends Spec {
           final class Test extends Trait[Int] {
             def a(v: Int) = v + 1
           }
-          val proxy = Proxy(new Test, dummyAround)
+          val proxy = Proxy[Trait[Int]](new Test, dummyAround)
           proxy.a(1) mustEqual 2
         }
+//        "nested parametrized type" in {
+//          class Test[+T] {
+//            def a[B >: T, That](that: Traversable[B])(implicit bf: CanBuildFrom[Seq[T], B, That]): That =
+//              bf.apply().result()
+//          }
+//          val proxy = Proxy(new Test[Int], dummyAround)
+//          proxy.a(Seq(1)) mustEqual Seq(1)
+//        }
         "bounded type" in {
           trait Trait[T] {
             def a[B <: T](value: B): String
@@ -232,7 +223,7 @@ class ProxySpec extends Spec {
         final class Testg extends Trait1 with Trait2 {
           def a = 42
         }
-        val proxy = Proxy(new Testg, dummyAround)
+        val proxy = Proxy[Trait1](new Testg, dummyAround)
         proxy.a mustEqual 42
       }
       "implicit values" in {
@@ -251,44 +242,37 @@ class ProxySpec extends Spec {
         import proxy._
         (42: String) mustEqual "a42"
       }
-      "not visible methods" in {
-        trait Trait {
-          def a = _a
-          protected[this] def _a: String
+      "not visible methods" - {
+        "protected[this]" in {
+          trait Trait {
+            def a = _a
+            protected[this] def _a: String
+          }
+          class Test extends Trait {
+            override protected[this] def _a = "a"
+          }
+          val proxy = Proxy[Trait](new Test, dummyAround)
+          proxy.a mustEqual "a"
         }
-        class Testf extends Trait {
-          override protected[this] def _a = "a"
+        "private[this]" in {
+          class Test {
+            def a = _a
+            private[this] def _a = "a"
+          }
+          val proxy = Proxy(new Test, dummyAround)
+          proxy.a mustEqual "a"
         }
-        val proxy = Proxy[Trait](new Testf, dummyAround)
-        proxy.a mustEqual "a"
-      }
-      "(not supported) not overriden methods" in {
-        trait Trait
-        final class Testk extends Trait {
-          def a = "a"
-        }
-        val proxy = Proxy(new Testk, dummyAround)
-        """proxy.a mustEqual "a"""" mustNot typeCheck
       }
     }
   }
 
   "proxies scala types" - {
-    "String" in {
-      val string = "a"
-      val proxy = Proxy(string, dummyAround)
-      proxy.charAt(0) mustEqual 'a'
-    }
-    "Tuple" in {
-      val tuple = (1, 2)
-      val proxy = Proxy(tuple, dummyAround)
-      proxy._2 mustEqual 2
-    }
-    "List" in {
-      val list = List(1, 2)
-      val proxy = Proxy(list, dummyAround)
-//      list.sum mustEqual 3
-    }
+//    "Seq" in {
+//      val seq = Seq(1, 2)
+//      seq.++:(null)
+//      val proxy = Proxy[TraversableLike[Int, Seq[Int]]](seq, dummyAround)
+//      
+//    }
   }
 
   "method interception" - {

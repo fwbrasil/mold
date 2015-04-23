@@ -7,42 +7,33 @@ class ProxyMacro(val c: Context) {
 
   import c.universe._
 
-  def proxy[T](instance: Expr[Any], around: Expr[Around])(implicit t: WeakTypeTag[T]) =
-    createProxy(proxyBaseClasses[T](instance.actualType), instance, around)
+  def proxy[T](instance: Expr[T], around: Expr[Around])(implicit t: WeakTypeTag[T]) =
+    createProxy(t.tpe, instance, around)
 
-  private def createProxy(types: List[Type], instance: Expr[Any], around: Expr[Around]) = {
-    
+  private def createProxy(typ: Type, instance: Expr[Any], around: Expr[Around]) = {
     val members =
-      types.map { typ =>
-        typ.typeSymbol.asClass.selfType
-        typ.members.toList.map {
-          case symbol: MethodSymbol =>
-            val defDef = internal.defDef(symbol, Modifiers(Flag.OVERRIDE), q"???")
-            workaroundBugs(defDef, typ).symbol
-          case other => other
-        }
-      }.flatten
-        .groupBy(m => (m.name, showRaw(m.typeSignature)))
-        .filterNot(_._2.exists(_.isFinal))
-        .filterNot(_._2.exists(_.owner == typeOf[Any].typeSymbol))
-        .filterNot(_._2.exists(_.owner == typeOf[Object].typeSymbol))
-        .values.map(_.head).toList
+      typ.members.toList.filter(m => !m.isFinal && !m.isPrivate && m.owner != typeOf[Any].typeSymbol && m.owner != typeOf[Object].typeSymbol)
 
     val r =
       q"""
-      new ..${types :+ c.typeOf[Proxy]} {
+      new $typ with ${typeOf[Proxy]} {
         override val impl = $instance
         private val around = $around
         ..${proxyTypes(members)}
-        ..${proxyMembers(members)}
+        ..${proxyMembers(members, typ)}
       }
     """
-    val u = c.untypecheck(r)
-    //    println(u)
+        val u = c.untypecheck(r)
+    println(u)
     u
   }
 
-  private def proxyMembers(m: List[Symbol]) = {
+  private def proxyTypes(m: List[Symbol]) =
+    m.filter(_.isType).filter(_.isAbstract).map(_.name.toTypeName).map { name =>
+      q"override type $name = impl.$name"
+    }
+
+  private def proxyMembers(m: List[Symbol], typ: Type) = {
 
     val wc = m.filter(!_.isConstructor).collect { case m: MethodSymbol if (!m.name.decoded.contains("$default$")) => m }
 
@@ -76,9 +67,8 @@ class ProxyMacro(val c: Context) {
             def term(i: Int) = TermName(s"_${i}")
             for (j <- 1 to paramsNames(i - 1).size) yield q"p.${term(i)}.${term(j)}"
           }
-
         val call =
-          if (symbol.isProtected || symbol.isPrivate)
+          if (symbol.privateWithin != NoSymbol || symbol.isProtectedThis)
             q"???"
           else
             q"impl.${symbol.name}[..$typeParams](...$etuples)"
@@ -90,7 +80,7 @@ class ProxyMacro(val c: Context) {
             around(${symbol.name.decoded}, invoke)(params)  
           """
 
-        internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body)
+        workaroundBugs(internal.defDef(symbol, Modifiers(Flag.OVERRIDE), body), typ)
     }
   }
 
@@ -105,47 +95,12 @@ class ProxyMacro(val c: Context) {
       val rhs =
         param.rhs match {
           case TypeBoundsTree(lo, hi) =>
-            val typeParamsByName = owner.typeSymbol.asClass.typeParams.zip(owner.typeArgs).toMap
-            println(typeParamsByName)
-            TypeBoundsTree(TypeTree(typeParamsByName.getOrElse(lo.symbol, lo.tpe)), TypeTree(typeParamsByName.getOrElse(hi.symbol, hi.tpe)))
+            val typ = owner.baseType(defDef.symbol.owner)
+            TypeBoundsTree(TypeTree(lo.tpe.asSeenFrom(typ, typ.typeSymbol)), TypeTree(hi.tpe.asSeenFrom(typ, typ.typeSymbol)))
           case other => other
         }
       TypeDef(param.mods, param.name, param.tparams, rhs)
     }
     DefDef(defDef.mods, defDef.name, tparams, vparamss, TypeTree(), defDef.rhs)
   }
-
-  private def proxyTypes(m: List[Symbol]) =
-    m.filter(_.isType).groupBy(_.name.toTypeName).collect {
-      case (name, symbols) =>
-        q"override type $name = impl.$name"
-    }
-
-  private def proxyBaseClasses[T](instanceType: Type)(implicit t: WeakTypeTag[T]) = {
-    if (t.tpe =:= typeOf[Nothing])
-      if (isExtensible(instanceType))
-        List(instanceType)
-      else
-        inferBaseTraits(instanceType)
-    else if (instanceType <:< t.tpe)
-      List(t.tpe)
-    else
-      c.abort(c.enclosingPosition, s"The value doesn't implement the proxied type.")
-  }
-
-  private def inferBaseTraits(typ: Type) =
-    typ.baseClasses.filter(_.asClass.isTrait).map(typ.baseType(_)) match {
-      case Nil =>
-        c.abort(c.enclosingPosition, "The proxied class must have an empty constructor or implement traits.")
-      case traits =>
-        traits
-    }
-
-  private def isExtensible(typ: Type) =
-    hasEmptyConstructor(typ) && !typ.typeSymbol.isFinal && !typ.typeSymbol.asClass.isSealed
-
-  private def hasEmptyConstructor(t: Type) =
-    t.decls.collect {
-      case m: MethodSymbol if (m.isConstructor && m.paramLists.flatten.isEmpty) => m
-    }.nonEmpty
 }
